@@ -38,6 +38,7 @@ namespace Duplikate_Entferner
          */
         private void Items_ItemAdd(object Item)
         {
+            if (!Properties.Settings.Default.auto_delete) return;
             try
             {
                 Outlook.MailItem mail = Item as Outlook.MailItem;
