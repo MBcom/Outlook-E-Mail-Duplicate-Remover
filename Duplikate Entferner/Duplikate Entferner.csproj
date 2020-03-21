@@ -34,7 +34,7 @@
     <PublishUrl>\\serverone.mb.local\mb-softwares\Outlook Duplikate Entferner\</PublishUrl>
     <InstallUrl>\\serverone.mb.local\mb-softwares\Outlook Duplikate Entferner\</InstallUrl>
     <TargetCulture>de</TargetCulture>
-    <ApplicationVersion>3.0.0.0</ApplicationVersion>
+    <ApplicationVersion>3.0.0.3</ApplicationVersion>
     <AutoIncrementApplicationRevision>true</AutoIncrementApplicationRevision>
     <UpdateEnabled>true</UpdateEnabled>
     <UpdateInterval>7</UpdateInterval>

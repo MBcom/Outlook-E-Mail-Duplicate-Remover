@@ -28,10 +28,10 @@ namespace Duplikate_Entferner
         }
 
 
-        /***
-         * Function called, when a new item is added to Inbox.
-         * 
-         */
+        /// <summary>
+        /// Function called, when a new item is added to Inbox.
+        /// </summary>
+        /// <param name="Item"></param>
         private void Items_ItemAdd(object Item)
         {
             if (!Properties.Settings.Default.auto_delete) return;
@@ -46,23 +46,50 @@ namespace Duplikate_Entferner
             }
         }
 
-        /**
-         * Function searches for email duplicates from a specific email
-         * 
-         */
+        /// <summary>
+        /// Returns true if mail items are probably equal
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        private bool MailItemEquals(Outlook.MailItem a, Outlook.MailItem b)
+        {
+            if (a.Subject != b.Subject || a.SenderEmailAddress != b.SenderEmailAddress || a.BodyFormat != b.BodyFormat || a.ReceivedTime != b.ReceivedTime)
+            {
+                return false;
+            }
+            switch (a.BodyFormat)
+            {
+                case Outlook.OlBodyFormat.olFormatPlain:
+                    return a.Body == b.Body;
+                case Outlook.OlBodyFormat.olFormatHTML:
+                    return a.HTMLBody == b.HTMLBody;
+                case Outlook.OlBodyFormat.olFormatRichText:
+                    return a.RTFBody == b.RTFBody;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Function searches for email duplicates from a specific email
+        /// </summary>
+        /// <param name="filter"></param>
+        /// <returns></returns>
         private IEnumerable<Outlook.MailItem> search(Outlook.MailItem filter)
         {
-            List<Outlook.MailItem> mailsFound = new List<Outlook.MailItem>();
+            if (filter.Parent == deletedMailsFolder) yield break;
+
+            HashSet<Outlook.MailItem> mailsFound = new HashSet<Outlook.MailItem>() { filter };
 
             foreach (Outlook.MailItem m in filter.GetConversation().GetRootItems())
             {
-                if (m.EntryID != filter.EntryID && m.Subject == filter.Subject && m.SenderEmailAddress == filter.SenderEmailAddress && m.ReceivedTime == filter.ReceivedTime && m.Body == filter.Body && m.Parent != deletedMailsFolder)
+                if (MailItemEquals(m, filter) && m.Parent != deletedMailsFolder)
                 {
                     mailsFound.Add(m);
                 }
             }
 
-            if (mailsFound.Count > 1)
+            if (mailsFound.Count > 0)
             {
                 List<Outlook.MailItem> mGelesen = new List<Outlook.MailItem>(); //List for readed emails
                 List<Outlook.MailItem> mNichtGelesen = new List<Outlook.MailItem>(); //List for unreaded
@@ -84,7 +111,6 @@ namespace Duplikate_Entferner
                         m.Move(deletedMailsFolder); //move to deleted folder
                         yield return m;
                     }
-                    filter.Move(deletedMailsFolder);
                     yield return filter;
                 }
                 else
@@ -121,10 +147,11 @@ namespace Duplikate_Entferner
         }
 
 
-        /**
-         * Function gets all emails of the inbox and subfolders.
-         * 
-         */
+        /// <summary>
+        /// Function gets all emails of the inbox and subfolders.
+        /// </summary>
+        /// <param name="folder"></param>
+        /// <param name="already_deleted"></param>
         private void GetMails(Outlook.MAPIFolder folder, ref HashSet<string> already_deleted)
         {
             if (folder.Folders.Count > 0)
@@ -145,7 +172,7 @@ namespace Duplikate_Entferner
                     Outlook.MailItem mail = mm as Outlook.MailItem;
 
                     //jump if already deleted
-                    if (already_deleted.Contains(mail.EntryID)) continue;
+                    if (mail.Parent == deletedMailsFolder) continue;
 
                     foreach (var item in search(mail))
                     {
@@ -158,10 +185,10 @@ namespace Duplikate_Entferner
             }
         }
 
-        /**
-         * Function deletes all duplicates found in mails dictionary created by 'GetMails'
-         * 
-         */
+        /// <summary>
+        /// Function deletes all duplicates found in mails dictionary created by 'GetMails'
+        /// </summary>
+        /// <returns></returns>
         public int removeDuplikates()
         {
             HashSet<string> already_deleted = new HashSet<string>();
