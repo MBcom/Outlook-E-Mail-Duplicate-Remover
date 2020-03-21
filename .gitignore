@@ -259,3 +259,7 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+/Duplikate Entferner/veröffentlichen
+/Duplikate Entferner/codesign2.snk
+/Duplikate Entferner/codesign.snk
+/Setup

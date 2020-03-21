@@ -14,24 +14,20 @@ namespace Duplikate_Entferner
     public partial class ThisAddIn
     {
         Outlook.Application app;
-        Outlook.MAPIFolder mailsfolder;
+        Outlook.MAPIFolder deletedMailsFolder;
         Outlook.MAPIFolder mainFolder;
-        Outlook._NameSpace oNS;
-        Dictionary<string, List<Outlook.MailItem>> mails = new Dictionary<string, List<Outlook.MailItem>>();
-        List<Outlook.MailItem> mailsFound;
-        bool done = false;
-
 
         private void ThisAddIn_Startup(object sender, System.EventArgs e)
         {
             app = this.Application;
-            oNS = (Outlook._NameSpace)app.GetNamespace("MAPI");
+
+            deletedMailsFolder = app.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
 
             mainFolder = app.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox);
             mainFolder.Items.ItemAdd += Items_ItemAdd;
         }
 
- 
+
         /***
          * Function called, when a new item is added to Inbox.
          * 
@@ -42,66 +38,78 @@ namespace Duplikate_Entferner
             try
             {
                 Outlook.MailItem mail = Item as Outlook.MailItem;
-                mailsFound = new List<Outlook.MailItem>();
-                search(mail, mainFolder);
-                if (mailsFound.Count > 1)
-                {
-                    List<Outlook.MailItem> mGelesen = new List<Outlook.MailItem>(); //List for readed emails
-                    List<Outlook.MailItem> mNichtGelesen = new List<Outlook.MailItem>(); //List for unreaded
-                    foreach (Outlook.MailItem m in mailsFound)
-                    {
-                            if (m.UnRead)
-                            {
-                                mNichtGelesen.Add(m);
-                            }
-                            else
-                            {
-                                mGelesen.Add(m);
-                            }
-                    }
-                    if (mGelesen.Count > 0) // if there are readed emails, move the new unreaded to trash
-                    {
-                        foreach (Outlook.MailItem m in mNichtGelesen)
-                        {
-                            m.Move(oNS.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)); //move to deleted folder
-                        }
-                    }
-                    else
-                    {
-                        bool first = false;
-                        foreach (Outlook.MailItem m in mNichtGelesen) //delete just n-1
-                        {
-                            if (first)
-                            {
-                                m.Move(oNS.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)); //move to deleted folder
-                            }
-                            first = true;
-                        }
-                    }
-                }
 
+                search(mail);
             }
             catch (Exception)
             {
             }
         }
-        
+
         /**
          * Function searches for email duplicates from a specific email
          * 
          */
-        private void search(Outlook.MailItem filter, Outlook.MAPIFolder folder)
+        private IEnumerable<Outlook.MailItem> search(Outlook.MailItem filter)
         {
-            Outlook.Items items = folder.Items;
-            foreach(Outlook.MailItem mitem in items.OfType<Outlook.MailItem>().Where(m => m.Subject == filter.Subject && m.SenderEmailAddress == filter.SenderEmailAddress && m.ReceivedTime == filter.ReceivedTime && m.Body == filter.Body).Select(m => m))
+            List<Outlook.MailItem> mailsFound = new List<Outlook.MailItem>();
+
+            foreach (Outlook.MailItem m in filter.GetConversation().GetRootItems())
             {
-                mailsFound.Add(mitem);
-            }
-            if (folder.Folders.Count > 0)
-            {
-                foreach (Outlook.MAPIFolder f in folder.Folders)
+                if (m.EntryID != filter.EntryID && m.Subject == filter.Subject && m.SenderEmailAddress == filter.SenderEmailAddress && m.ReceivedTime == filter.ReceivedTime && m.Body == filter.Body && m.Parent != deletedMailsFolder)
                 {
-                    search(filter, f);
+                    mailsFound.Add(m);
+                }
+            }
+
+            if (mailsFound.Count > 1)
+            {
+                List<Outlook.MailItem> mGelesen = new List<Outlook.MailItem>(); //List for readed emails
+                List<Outlook.MailItem> mNichtGelesen = new List<Outlook.MailItem>(); //List for unreaded
+                foreach (Outlook.MailItem m in mailsFound)
+                {
+                    if (m.UnRead)
+                    {
+                        mNichtGelesen.Add(m);
+                    }
+                    else
+                    {
+                        mGelesen.Add(m);
+                    }
+                }
+                if (mGelesen.Count > 0) // if there are readed emails, move the new unreaded to trash
+                {
+                    foreach (Outlook.MailItem m in mNichtGelesen)
+                    {
+                        m.Move(deletedMailsFolder); //move to deleted folder
+                        yield return m;
+                    }
+                    filter.Move(deletedMailsFolder);
+                    yield return filter;
+                }
+                else
+                {//no email were already readed
+                    bool first = false;
+                    foreach (Outlook.MailItem m in mNichtGelesen) //delete just n-1
+                    {
+                        if (first)
+                        {
+                            m.Move(deletedMailsFolder); //move to deleted folder
+                            yield return m;
+                        }
+                        first = true;
+                    }
+                }
+                //clear readed mails too
+                bool first2 = false;
+                foreach (Outlook.MailItem m in mGelesen) //delete just n-1
+                {
+                    if (first2)
+                    {
+                        m.Move(deletedMailsFolder); //move to deleted folder
+                        yield return m;
+                    }
+                    first2 = true;
                 }
             }
         }
@@ -117,42 +125,37 @@ namespace Duplikate_Entferner
          * Function gets all emails of the inbox and subfolders.
          * 
          */
-        private void GetMails(Outlook.MAPIFolder folder)
+        private void GetMails(Outlook.MAPIFolder folder, ref HashSet<string> already_deleted)
         {
-            Task t = Task.Factory.StartNew(f =>
+            if (folder.Folders.Count > 0)
             {
-                if (folder.Folders.Count > 0)
+                foreach (Outlook.MAPIFolder subFolder in folder.Folders)
                 {
-                    foreach (Outlook.MAPIFolder subFolder in folder.Folders)
-                    {
-                        GetMails(subFolder);
-                    }
+                    GetMails(subFolder, ref already_deleted);
                 }
+            }
 
-                Outlook.Items items = folder.Items;
-                foreach (object m in items)
+            
+
+            Outlook.Items items = folder.Items;
+            foreach (object mm in items)
+            {
+                try
                 {
-                    try
+                    Outlook.MailItem mail = mm as Outlook.MailItem;
+
+                    //jump if already deleted
+                    if (already_deleted.Contains(mail.EntryID)) continue;
+
+                    foreach (var item in search(mail))
                     {
-                        Outlook.MailItem mail = m as Outlook.MailItem;
-                        string hash = getMailProps(mail);
-                        if (mails.ContainsKey(hash))
-                        {
-                            mails[hash].Add(mail);
-                        }
-                        else
-                        {
-                            List<Outlook.MailItem> l = new List<Outlook.MailItem>();
-                            l.Add(mail);
-                            mails.Add(hash, l);
-                        }
-                    }
-                    catch (Exception)
-                    {
+                        already_deleted.Add(item.EntryID);
                     }
                 }
-            }, folder, TaskCreationOptions.AttachedToParent);
-            t.Wait();
+                catch (Exception)
+                {
+                }
+            }
         }
 
         /**
@@ -161,60 +164,12 @@ namespace Duplikate_Entferner
          */
         public int removeDuplikates()
         {
-            if (!done) //checks if GetMails is run once
-            {
-                GetMails(oNS.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox));
-                done = true;
-            }
-            int i = 0;
-            foreach (string s in mails.Keys)
-            {
-                if (mails[s].Count > 1)
-                {
-                    List<Outlook.MailItem> mGelesen = new List<Outlook.MailItem>();
-                    List<Outlook.MailItem> mNichtGelesen = new List<Outlook.MailItem>();
-                    foreach (Outlook.MailItem m in mails[s])
-                    {
-                        if (m.UnRead)
-                        {
-                            mNichtGelesen.Add(m);
-                        }
-                        else
-                        {
-                            mGelesen.Add(m);
-                        }
-                    }
-                    if (mGelesen.Count > 0) // if there are readed emails, move the new unreaded to trash
-                    {
-                        foreach (Outlook.MailItem m in mNichtGelesen)
-                        {
-                            m.Move(oNS.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)); //move to deleted folder
-                            i++;
-                        }
-                    }
-                    else
-                    {
-                        bool first = false;
-                        foreach (Outlook.MailItem m in mNichtGelesen) 
-                        {
-                            if (first) //delete just n-1
-                            {
-                                m.Move(oNS.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)); //move to deleted folder
-                                i++;
-                            }
-                            first = true;
-                        }
-                    }
-                }
-            }
+            HashSet<string> already_deleted = new HashSet<string>();
+            GetMails(mainFolder, ref already_deleted);
 
-            return i;
+            return already_deleted.Count;
         }
 
-        static string getMailProps(Outlook.MailItem mail)
-        {
-            return mail.ReceivedTime.ToLongTimeString() + mail.SenderEmailAddress + mail.Subject + mail.Recipients.ToString();
-        }
 
 
         #region Von VSTO generierter Code
