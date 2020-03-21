@@ -35,15 +35,26 @@ namespace Duplikate_Entferner
         private void Items_ItemAdd(object Item)
         {
             if (!Properties.Settings.Default.auto_delete) return;
-            try
-            {
-                Outlook.MailItem mail = Item as Outlook.MailItem;
 
-                search(mail);
-            }
-            catch (Exception)
+            Task t = Task.Factory.StartNew(() =>
             {
-            }
+                try
+                {
+                    Outlook.MailItem mail = Item as Outlook.MailItem;
+
+                    return search(mail).Count();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+                return -1;
+            }).ContinueWith(r =>
+            {
+                Console.WriteLine("Email check completed"+ r.Result);
+            });
+
+
         }
 
         /// <summary>
@@ -79,7 +90,7 @@ namespace Duplikate_Entferner
         {
             if (filter.Parent == deletedMailsFolder) yield break;
 
-            HashSet<Outlook.MailItem> mailsFound = new HashSet<Outlook.MailItem>() { filter };
+            HashSet<Outlook.MailItem> mailsFound = new HashSet<Outlook.MailItem>();
 
             foreach (Outlook.MailItem m in filter.GetConversation().GetRootItems())
             {
@@ -154,16 +165,6 @@ namespace Duplikate_Entferner
         /// <param name="already_deleted"></param>
         private void GetMails(Outlook.MAPIFolder folder, ref HashSet<string> already_deleted)
         {
-            if (folder.Folders.Count > 0)
-            {
-                foreach (Outlook.MAPIFolder subFolder in folder.Folders)
-                {
-                    GetMails(subFolder, ref already_deleted);
-                }
-            }
-
-            
-
             Outlook.Items items = folder.Items;
             foreach (object mm in items)
             {
@@ -181,6 +182,14 @@ namespace Duplikate_Entferner
                 }
                 catch (Exception)
                 {
+                }
+            }
+
+            if (folder.Folders.Count > 0)
+            {
+                foreach (Outlook.MAPIFolder subFolder in folder.Folders)
+                {
+                    GetMails(subFolder, ref already_deleted);
                 }
             }
         }
