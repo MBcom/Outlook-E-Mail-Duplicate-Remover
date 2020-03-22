@@ -31,6 +31,7 @@ namespace Duplikate_Entferner
         private void toggleButton1_Click(object sender, RibbonControlEventArgs e)
         {
             Properties.Settings.Default.auto_delete = toggleButton1.Checked;
+            Properties.Settings.Default.Save();
         }
     }
 }

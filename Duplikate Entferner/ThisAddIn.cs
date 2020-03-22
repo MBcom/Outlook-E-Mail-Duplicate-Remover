@@ -16,6 +16,7 @@ namespace Duplikate_Entferner
         Outlook.Application app;
         Outlook.MAPIFolder deletedMailsFolder;
         Outlook.MAPIFolder mainFolder;
+        bool completeSearchRunning = false;
 
         private void ThisAddIn_Startup(object sender, System.EventArgs e)
         {
@@ -24,7 +25,35 @@ namespace Duplikate_Entferner
             deletedMailsFolder = app.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
 
             mainFolder = app.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox);
-            mainFolder.Items.ItemAdd += Items_ItemAdd;
+
+            AddEventListenerForFolder(mainFolder as Outlook.Folder);
+        }
+
+        /// <summary>
+        /// Adds event listener to specified folder and subfolders.
+        /// </summary>
+        /// <param name="folder"></param>
+        private void AddEventListenerForFolder(Outlook.Folder folder)
+        {
+            folder.Items.ItemAdd += new Outlook.ItemsEvents_ItemAddEventHandler(Items_ItemAdd);
+            folder.Items.ItemChange += new Outlook.ItemsEvents_ItemChangeEventHandler(Items_ItemChange);
+
+            foreach (Outlook.Folder f in folder.Folders)
+            {
+                AddEventListenerForFolder(f);
+            }
+        }
+
+        /// <summary>
+        /// Function called, when a new item is changed.
+        /// </summary>
+        /// <param name="Item"></param>
+        private void Items_ItemChange(object Item)
+        {
+            if (!completeSearchRunning)
+            {
+                Items_ItemAdd(Item);
+            }
         }
 
 
@@ -36,6 +65,8 @@ namespace Duplikate_Entferner
         {
             if (!Properties.Settings.Default.auto_delete) return;
 
+            if (!(Item is Outlook.MailItem)) return;
+
             Task t = Task.Factory.StartNew(() =>
             {
                 try
@@ -46,12 +77,12 @@ namespace Duplikate_Entferner
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Debug.WriteLine(ex.Message);
                 }
                 return -1;
             }).ContinueWith(r =>
             {
-                Console.WriteLine("Email check completed"+ r.Result);
+                Debug.WriteLine("Email check completed"+ r.Result);
             });
 
 
@@ -81,6 +112,33 @@ namespace Duplikate_Entferner
             return true;
         }
 
+        private void EnumerateConversation(object item, Outlook.Conversation conversation, Outlook.MailItem filter, ref Dictionary<string, Outlook.MailItem> mailsFound)
+        {
+            Outlook.SimpleItems items = conversation.GetChildren(item);
+            if (items.Count > 0)
+            {
+                foreach (object myItem in items)
+                {
+                    //  enumerate only MailItem type.
+                    if (myItem is Outlook.MailItem)
+                    {
+                        Outlook.MailItem m = myItem as Outlook.MailItem;
+                        Outlook.Folder inFolder = m.Parent as Outlook.Folder;
+                        string msg = m.Subject + " in folder " + inFolder.Name;
+
+                        Debug.WriteLine(msg);
+
+                        if (!mailsFound.ContainsKey(m.EntryID) && MailItemEquals(m, filter) && inFolder != deletedMailsFolder)
+                        {
+                            mailsFound.Add(m.EntryID, m);
+                        }
+                    }
+                    // Continue recursion.
+                    EnumerateConversation(myItem, conversation, filter, ref mailsFound);
+                }
+            }
+        }
+
         /// <summary>
         /// Function searches for email duplicates from a specific email
         /// </summary>
@@ -90,21 +148,61 @@ namespace Duplikate_Entferner
         {
             if (filter.Parent == deletedMailsFolder) yield break;
 
-            HashSet<Outlook.MailItem> mailsFound = new HashSet<Outlook.MailItem>();
+            Dictionary<string,Outlook.MailItem> mailsFound = new Dictionary<string, Outlook.MailItem>() { {filter.EntryID, filter} };
 
-            foreach (Outlook.MailItem m in filter.GetConversation().GetRootItems())
+            // Obtain a Conversation object.
+            Outlook.Conversation conv = filter.GetConversation();
+
+            // Obtain Table that contains rows 
+            // for each item in Conversation.
+            Outlook.Table table = conv.GetTable();
+
+            //break if there just one
+            if (table.GetRowCount() == 1) yield break;
+
+            Debug.WriteLine("Conversation Items Count: " + table.GetRowCount().ToString());
+
+            // Obtain root items and enumerate Conversation.
+            Outlook.SimpleItems simpleItems = conv.GetRootItems();
+            foreach (object item in simpleItems)
             {
-                if (MailItemEquals(m, filter) && m.Parent != deletedMailsFolder)
+                // enumerate only MailItem type.
+                if (item is Outlook.MailItem)
                 {
-                    mailsFound.Add(m);
+                    Outlook.MailItem m = item as Outlook.MailItem;
+                    Outlook.Folder inFolder = m.Parent as Outlook.Folder;
+                    string msg = m.Subject + " in folder " + inFolder.Name;
+
+                    Debug.WriteLine(msg);
+
+                    if (!mailsFound.ContainsKey(m.EntryID) && MailItemEquals(m, filter) && inFolder != deletedMailsFolder)
+                    {
+                        mailsFound.Add(m.EntryID, m);
+                    }
                 }
+                // Call EnumerateConversation 
+                // to access child nodes of root items.
+                EnumerateConversation(item, conv, filter, ref mailsFound);
             }
 
-            if (mailsFound.Count > 0)
+            if (mailsFound.Count > 1)
             {
+                //delete duplicates //O(((n-1)n)/2)
+                var mf = mailsFound.ToArray();
+                for (int i = 0; i < mf.Length - 1; i++)
+                {
+                    for (int j = i + 1; j < mf.Length; j++)
+                    {
+                        if (app.Session.CompareEntryIDs(mf[i].Key, mf[j].Key))
+                        {
+                            mailsFound.Remove(mf[j].Key);
+                        }
+                    }
+                }
+
                 List<Outlook.MailItem> mGelesen = new List<Outlook.MailItem>(); //List for readed emails
                 List<Outlook.MailItem> mNichtGelesen = new List<Outlook.MailItem>(); //List for unreaded
-                foreach (Outlook.MailItem m in mailsFound)
+                foreach (Outlook.MailItem m in mailsFound.Values)
                 {
                     if (m.UnRead)
                     {
@@ -122,7 +220,6 @@ namespace Duplikate_Entferner
                         m.Move(deletedMailsFolder); //move to deleted folder
                         yield return m;
                     }
-                    yield return filter;
                 }
                 else
                 {//no email were already readed
@@ -131,9 +228,9 @@ namespace Duplikate_Entferner
                     {
                         if (first)
                         {
-                            m.Move(deletedMailsFolder); //move to deleted folder
-                            yield return m;
+                            m.Move(deletedMailsFolder); //move to deleted folder  
                         }
+                        yield return m;
                         first = true;
                     }
                 }
@@ -144,8 +241,8 @@ namespace Duplikate_Entferner
                     if (first2)
                     {
                         m.Move(deletedMailsFolder); //move to deleted folder
-                        yield return m;
                     }
+                    yield return m;
                     first2 = true;
                 }
             }
@@ -168,6 +265,8 @@ namespace Duplikate_Entferner
             Outlook.Items items = folder.Items;
             foreach (object mm in items)
             {
+                if (!(mm is Outlook.MailItem)) continue;
+
                 try
                 {
                     Outlook.MailItem mail = mm as Outlook.MailItem;
@@ -185,6 +284,8 @@ namespace Duplikate_Entferner
                 }
             }
 
+            Debug.WriteLine($"{items.Count} items processed in {folder.Name}");
+
             if (folder.Folders.Count > 0)
             {
                 foreach (Outlook.MAPIFolder subFolder in folder.Folders)
@@ -200,8 +301,10 @@ namespace Duplikate_Entferner
         /// <returns></returns>
         public int removeDuplikates()
         {
+            completeSearchRunning = true;
             HashSet<string> already_deleted = new HashSet<string>();
             GetMails(mainFolder, ref already_deleted);
+            completeSearchRunning = false;
 
             return already_deleted.Count;
         }
