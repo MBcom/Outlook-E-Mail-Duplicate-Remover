@@ -21,7 +21,7 @@ namespace Duplikate_Entferner
             this.label1.Label = "Verarbeite ...";
 
             Task t = Task.Factory.StartNew(() => {
-                return Globals.ThisAddIn.removeDuplikates();
+                return Globals.ThisAddIn.RemoveDuplikates();
             }).ContinueWith(r => {
                 this.label1.Label = "Erfolgreich " + r.Result +" Elemente gelöscht.";
                 button1.Enabled = true;
@@ -32,6 +32,19 @@ namespace Duplikate_Entferner
         {
             Properties.Settings.Default.auto_delete = toggleButton1.Checked;
             Properties.Settings.Default.Save();
+        }
+
+        private void button2_Click(object sender, RibbonControlEventArgs e)
+        {
+            button2.Enabled = false;
+            this.label2.Label = "Verarbeite ...";
+
+            Task t = Task.Factory.StartNew(() => {
+                return Globals.ThisAddIn.RemoveDuplikates(true);
+            }).ContinueWith(r => {
+                this.label2.Label = "Erfolgreich " + r.Result + " Elemente gelöscht.";
+                button2.Enabled = true;
+            });
         }
     }
 }

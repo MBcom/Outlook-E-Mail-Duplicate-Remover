@@ -8,6 +8,7 @@ using Office = Microsoft.Office.Core;
 using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace Duplikate_Entferner
 {
@@ -27,6 +28,20 @@ namespace Duplikate_Entferner
             mainFolder = app.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox);
 
             AddEventListenerForFolder(mainFolder as Outlook.Folder);
+
+            Thread t = new Thread(() =>
+            {
+                while (true)
+                {
+                    //remove duplicates in new emails every 2 minutes
+                    Thread.Sleep(120000);
+                    if (Properties.Settings.Default.auto_delete)
+                    {
+                        RemoveDuplikates(true);
+                    } 
+                }
+            });
+            t.Start();
         }
 
         /// <summary>
@@ -82,7 +97,7 @@ namespace Duplikate_Entferner
                 return -1;
             }).ContinueWith(r =>
             {
-                Debug.WriteLine("Email check completed"+ r.Result);
+                Debug.WriteLine("Email check completed" + r.Result);
             });
 
 
@@ -148,7 +163,7 @@ namespace Duplikate_Entferner
         {
             if (filter.Parent == deletedMailsFolder) yield break;
 
-            Dictionary<string,Outlook.MailItem> mailsFound = new Dictionary<string, Outlook.MailItem>() { {filter.EntryID, filter} };
+            Dictionary<string, Outlook.MailItem> mailsFound = new Dictionary<string, Outlook.MailItem>() { { filter.EntryID, filter } };
 
             // Obtain a Conversation object.
             Outlook.Conversation conv = filter.GetConversation();
@@ -260,9 +275,20 @@ namespace Duplikate_Entferner
         /// </summary>
         /// <param name="folder"></param>
         /// <param name="already_deleted"></param>
-        private void GetMails(Outlook.MAPIFolder folder, ref HashSet<string> already_deleted)
+        /// <param name="unreadedOnly">Search only in unread messages</param>
+        private void GetMails(Outlook.MAPIFolder folder, ref HashSet<string> already_deleted, bool unreadedOnly)
         {
-            Outlook.Items items = folder.Items;
+            Outlook.Items items;
+            if (unreadedOnly)
+            {
+                //take only unreaded messages
+                items = folder.Items.Restrict("[Unread]=true");
+            }
+            else
+            {
+                items = folder.Items;
+            }
+
             foreach (object mm in items)
             {
                 if (!(mm is Outlook.MailItem)) continue;
@@ -290,7 +316,7 @@ namespace Duplikate_Entferner
             {
                 foreach (Outlook.MAPIFolder subFolder in folder.Folders)
                 {
-                    GetMails(subFolder, ref already_deleted);
+                    GetMails(subFolder, ref already_deleted, unreadedOnly);
                 }
             }
         }
@@ -298,12 +324,13 @@ namespace Duplikate_Entferner
         /// <summary>
         /// Function deletes all duplicates found in mails dictionary created by 'GetMails'
         /// </summary>
+        /// <param name="searchInUnreadOnly">Searches only in unread messages.</param>
         /// <returns></returns>
-        public int removeDuplikates()
+        public int RemoveDuplikates(bool searchInUnreadOnly = false)
         {
             completeSearchRunning = true;
             HashSet<string> already_deleted = new HashSet<string>();
-            GetMails(mainFolder, ref already_deleted);
+            GetMails(mainFolder, ref already_deleted, searchInUnreadOnly);
             completeSearchRunning = false;
 
             return already_deleted.Count;

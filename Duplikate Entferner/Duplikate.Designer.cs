@@ -39,14 +39,19 @@
             this.toggleButton1 = this.Factory.CreateRibbonToggleButton();
             this.button1 = this.Factory.CreateRibbonButton();
             this.label1 = this.Factory.CreateRibbonLabel();
+            this.group2 = this.Factory.CreateRibbonGroup();
+            this.button2 = this.Factory.CreateRibbonButton();
+            this.label2 = this.Factory.CreateRibbonLabel();
             this.tab1.SuspendLayout();
             this.group1.SuspendLayout();
+            this.group2.SuspendLayout();
             this.SuspendLayout();
             // 
             // tab1
             // 
             this.tab1.ControlId.ControlIdType = Microsoft.Office.Tools.Ribbon.RibbonControlIdType.Office;
             this.tab1.Groups.Add(this.group1);
+            this.tab1.Groups.Add(this.group2);
             this.tab1.Label = "Duplikate Entferner";
             this.tab1.Name = "tab1";
             // 
@@ -74,6 +79,23 @@
             this.label1.Label = " ";
             this.label1.Name = "label1";
             // 
+            // group2
+            // 
+            this.group2.Items.Add(this.button2);
+            this.group2.Items.Add(this.label2);
+            this.group2.Name = "group2";
+            // 
+            // button2
+            // 
+            this.button2.Label = "Duplikate in ungelesenen E-Mails entfernen";
+            this.button2.Name = "button2";
+            this.button2.Click += new Microsoft.Office.Tools.Ribbon.RibbonControlEventHandler(this.button2_Click);
+            // 
+            // label2
+            // 
+            this.label2.Label = " ";
+            this.label2.Name = "label2";
+            // 
             // Duplikate
             // 
             this.Name = "Duplikate";
@@ -84,6 +106,8 @@
             this.tab1.PerformLayout();
             this.group1.ResumeLayout(false);
             this.group1.PerformLayout();
+            this.group2.ResumeLayout(false);
+            this.group2.PerformLayout();
             this.ResumeLayout(false);
 
         }
@@ -95,6 +119,9 @@
         internal Microsoft.Office.Tools.Ribbon.RibbonToggleButton toggleButton1;
         internal Microsoft.Office.Tools.Ribbon.RibbonButton button1;
         internal Microsoft.Office.Tools.Ribbon.RibbonLabel label1;
+        internal Microsoft.Office.Tools.Ribbon.RibbonGroup group2;
+        internal Microsoft.Office.Tools.Ribbon.RibbonButton button2;
+        internal Microsoft.Office.Tools.Ribbon.RibbonLabel label2;
     }
 
     partial class ThisRibbonCollection
